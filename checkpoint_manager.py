@@ -65,3 +65,14 @@ class CheckpointManager:
     @property
     def next_chapter_id(self) -> str:
         return self.data.next_chapter_id
+
+    def reset(self) -> None:
+        """Reset checkpoint data and remove disk file."""
+        self.data = CheckpointData(story_id=self.story_id)
+        self._completed_set.clear()
+        if self.checkpoint_path.exists():
+            try:
+                self.checkpoint_path.unlink()
+            except Exception:
+                pass
+

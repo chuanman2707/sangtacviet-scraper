@@ -4,3 +4,8 @@ __pycache__/
 .DS_Store
 output/
 *.tmp
+cookies.json
+cookies.txt
+*.png
+*.html
+.system_generated/

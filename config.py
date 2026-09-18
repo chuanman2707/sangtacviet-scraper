@@ -13,11 +13,13 @@ DEFAULT_CHROMIUM_BINARY = os.environ.get(
 )
 
 # Base domains
-DEFAULT_BASE_URL = "https://sangtacviet.app"
+DEFAULT_BASE_URL = "https://sangtacviet.vip"
+DEFAULT_COOKIES_FILE = Path("cookies.json")
 ALLOWED_DOMAINS = [
-    "sangtacviet.app",
-    "sangtacviet.com",
+    "14.225.254.182",
     "sangtacviet.vip",
+    "sangtacviet.com",
+    "sangtacviet.app",
     "sangtacvietcdn.xyz",
 ]
 
@@ -30,8 +32,8 @@ BLOCKED_URL_REGEX = re.compile(
 )
 
 # Scraping settings
-DEFAULT_DELAY_MIN = 0.8
-DEFAULT_DELAY_MAX = 1.5
+DEFAULT_DELAY_MIN = 0.4
+DEFAULT_DELAY_MAX = 0.8
 DEFAULT_PAGE_TIMEOUT_MS = 30000
 DEFAULT_CONTENT_WAIT_TIMEOUT_SEC = 12
 DEFAULT_RECYCLE_EVERY = 50

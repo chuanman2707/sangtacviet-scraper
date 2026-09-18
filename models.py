@@ -21,8 +21,8 @@ class ChapterRecord:
     chapter_title: str
     url: str
     content_vi: str
-    content_zh: str
-    content_hanviet: str
+    content_zh: str = ""
+    content_hanviet: str = ""
     crawled_at: str = field(default_factory=get_current_iso_time)
 
     def to_dict(self) -> Dict[str, Any]:

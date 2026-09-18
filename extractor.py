@@ -8,7 +8,7 @@ from playwright.sync_api import Page
 from models import ChapterRecord
 
 
-EXTRACTION_JS = """() => {
+EXTRACTION_JS = """(extractBilingual) => {
     const firstI = document.querySelector("i[t]");
     if (!firstI) return null;
     
@@ -33,73 +33,71 @@ EXTRACTION_JS = """() => {
     
     if (!storyTitle) storyTitle = document.title;
     
-    // Build paragraphs for Chinese, Han-Viet, and Vietnamese
-    let zhParas = [];
-    let hvParas = [];
-    
-    let curZh = [];
-    let curHv = [];
-    let consecutiveBrs = 0;
-    
-    function flushPara() {
-        if (curZh.length > 0 || curHv.length > 0) {
-            zhParas.push(curZh.join("").trim());
-            hvParas.push(curHv.join(" ").trim().replace(/ +/g, " "));
-            curZh = [];
-            curHv = [];
-        }
-    }
-    
-    // Walk through child nodes of container to reconstruct original and Han-Viet
-    for (let node of container.childNodes) {
-        if (node.nodeType === Node.ELEMENT_NODE) {
-            if (node.tagName === "BR") {
-                consecutiveBrs++;
-                if (consecutiveBrs >= 2) {
-                    flushPara();
-                }
-                continue;
-            }
-            consecutiveBrs = 0;
-            
-            if (node.tagName === "I" && node.hasAttribute("t")) {
-                const zh = node.getAttribute("t") || "";
-                const hv = node.getAttribute("h") || "";
-                if (zh) curZh.push(zh);
-                if (hv) curHv.push(hv);
-            } else if (node.tagName === "SCRIPT" || node.tagName === "STYLE" || node.tagName === "CENTER") {
-                continue;
-            } else {
-                const innerITags = node.querySelectorAll("i[t]");
-                if (innerITags.length > 0) {
-                    for (let it of innerITags) {
-                        const zh = it.getAttribute("t") || "";
-                        const hv = it.getAttribute("h") || "";
-                        if (zh) curZh.push(zh);
-                        if (hv) curHv.push(hv);
-                    }
-                } else {
-                    const text = node.innerText ? node.innerText.trim() : "";
-                    if (text) {
-                        curZh.push(text);
-                        curHv.push(text);
-                    }
-                }
-            }
-        } else if (node.nodeType === Node.TEXT_NODE) {
-            const val = node.nodeValue ? node.nodeValue.trim() : "";
-            if (val) {
-                curZh.push(val);
-                curHv.push(val);
-            }
-        }
-    }
-    flushPara();
-    
     // Vietnamese clean text (preserves original natural paragraphs & punctuations)
     const viContent = container.innerText.trim();
-    const zhContent = zhParas.join("\\n\\n");
-    const hvContent = hvParas.join("\\n\\n");
+    let zhContent = "";
+    let hvContent = "";
+
+    if (extractBilingual) {
+        let zhParas = [];
+        let hvParas = [];
+        let curZh = [];
+        let curHv = [];
+        let consecutiveBrs = 0;
+        
+        function flushPara() {
+            if (curZh.length > 0 || curHv.length > 0) {
+                zhParas.push(curZh.join("").trim());
+                hvParas.push(curHv.join(" ").trim().replace(/ +/g, " "));
+                curZh = [];
+                curHv = [];
+            }
+        }
+        
+        for (let node of container.childNodes) {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+                if (node.tagName === "BR") {
+                    consecutiveBrs++;
+                    if (consecutiveBrs >= 2) flushPara();
+                    continue;
+                }
+                consecutiveBrs = 0;
+                if (node.tagName === "I" && node.hasAttribute("t")) {
+                    const zh = node.getAttribute("t") || "";
+                    const hv = node.getAttribute("h") || "";
+                    if (zh) curZh.push(zh);
+                    if (hv) curHv.push(hv);
+                } else if (node.tagName === "SCRIPT" || node.tagName === "STYLE" || node.tagName === "CENTER") {
+                    continue;
+                } else {
+                    const innerITags = node.querySelectorAll("i[t]");
+                    if (innerITags.length > 0) {
+                        for (let it of innerITags) {
+                            const zh = it.getAttribute("t") || "";
+                            const hv = it.getAttribute("h") || "";
+                            if (zh) curZh.push(zh);
+                            if (hv) curHv.push(hv);
+                        }
+                    } else {
+                        const text = node.innerText ? node.innerText.trim() : "";
+                        if (text) {
+                            curZh.push(text);
+                            curHv.push(text);
+                        }
+                    }
+                }
+            } else if (node.nodeType === Node.TEXT_NODE) {
+                const val = node.nodeValue ? node.nodeValue.trim() : "";
+                if (val) {
+                    curZh.push(val);
+                    curHv.push(val);
+                }
+            }
+        }
+        flushPara();
+        zhContent = zhParas.join("\\n\\n");
+        hvContent = hvParas.join("\\n\\n");
+    }
     
     // Next chapter link
     const nextBtn = document.querySelector("#navnexttop") || document.querySelector("#navnextbot");
@@ -118,12 +116,12 @@ EXTRACTION_JS = """() => {
 
 
 def extract_chapter_payload(
-    page: Page, story_id: str, chapter_id: str, current_url: str
+    page: Page, story_id: str, chapter_id: str, current_url: str, extract_bilingual: bool = False
 ) -> Tuple[Optional[ChapterRecord], Optional[str]]:
     """
     Executes in-page extraction and returns (ChapterRecord, next_chapter_id).
     """
-    data = page.evaluate(EXTRACTION_JS)
+    data = page.evaluate(EXTRACTION_JS, extract_bilingual)
     if not data or not data.get("viContent"):
         return None, None
 
