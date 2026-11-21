@@ -11,7 +11,14 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict
+
+from textnorm import (
+    contains_cjk,
+    is_watermark_line,
+    normalize_spaces,
+    sanitize_chapter_text,
+)
 
 
 # ==============================================================================
@@ -30,6 +37,17 @@ WATERMARK_PATTERNS = [
     re.compile(r"^\s*bản convert được thực hiện bởi:?.*", re.IGNORECASE),
     re.compile(r"^\s*chúc bạn đọc truyện vui vẻ.*", re.IGNORECASE),
     re.compile(r"^\s*bấm like để ủng hộ.*", re.IGNORECASE),
+    # Twkan / Chinese aggregator watermarks
+    re.compile(r".*twkan.*", re.IGNORECASE),
+    re.compile(r".*台灣小說網.*"),
+    re.compile(r".*台湾小说网.*"),
+    re.compile(r".*記住本站.*"),
+    re.compile(r".*记住本站.*"),
+    re.compile(r".*全網首發.*"),
+    re.compile(r".*全网首发.*"),
+    re.compile(r"^GOOGLE\s*搜索.*", re.IGNORECASE),
+    re.compile(r"^谷歌搜索.*"),
+    re.compile(r".*(無彈窗|无弹窗|最快更新|章節報錯|章节报错|加入書籤|加入书签|天才一秒).*"),
 ]
 
 # Kaomoji / Emoticons to replace or clean
@@ -150,16 +168,22 @@ class NovelCleaner:
         self.merge_short_lines = merge_short_lines
 
     def clean_text(self, text: str) -> str:
-        """Pipeline to clean, normalize, and polish Vietnamese novel text."""
+        """Pipeline to clean, normalize, and polish novel text."""
+        is_cjk = contains_cjk(text)
         lines = text.split("\n")
         cleaned_lines = []
 
         for line in lines:
-            stripped = line.strip()
+            stripped = normalize_spaces(line)
             # 1. Skip watermark lines
             if self._is_watermark(stripped):
                 continue
             cleaned_lines.append(stripped)
+
+        if is_cjk:
+            # Chinese sources: keep paragraph breaks, remove obfuscated ads,
+            # but never run the Vietnamese convert/smoothing heuristics.
+            return sanitize_chapter_text("\n".join(cleaned_lines))
 
         # Join lines back to work with paragraph blocks
         content = "\n".join(cleaned_lines)
@@ -187,6 +211,8 @@ class NovelCleaner:
     def _is_watermark(self, line: str) -> bool:
         if not line:
             return False
+        if is_watermark_line(line):
+            return True
         for pat in WATERMARK_PATTERNS:
             if pat.match(line):
                 return True
@@ -286,13 +312,20 @@ class NovelCleaner:
 
 
 def parse_chapter_number(title: str) -> int:
-    """Extract integer chapter number from titles like 'Thứ 10 chương...', 'Chương 5...'"""
+    """Extract integer chapter number from Vietnamese or Chinese titles."""
     m = re.search(r"(?:thứ|chương)\s*(\d+)", title, re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+    # Chinese: 第12章 / 第 12 話 / 第3节
+    m = re.search(r"第\s*(\d+)\s*[章話话回节節]", title)
     if m:
         return int(m.group(1))
     m2 = re.search(r"\b(\d+)\b", title)
     if m2:
         return int(m2.group(1))
+    m3 = re.search(r"(\d+)", title)
+    if m3:
+        return int(m3.group(1))
     return 999999
 
 
@@ -378,19 +411,21 @@ def clean_jsonl_file(input_file: Path, output_file: Path, cleaner: NovelCleaner)
     dup_count = 0
 
     for r in records:
-        content_vi = r.get("content_vi", "")
+        # Chinese-only sources (Twkan) store their body in content_zh.
+        field = "content_vi" if (r.get("content_vi") or "").strip() else "content_zh"
+        raw_content = r.get(field, "") or ""
         title = r.get("chapter_title", "")
-        
-        cleaned_vi = cleaner.clean_text(content_vi)
+
+        cleaned_content = cleaner.clean_text(raw_content)
         cleaned_title = cleaner.clean_text(title)
 
-        h = hashlib.md5(cleaned_vi.encode("utf-8")).hexdigest()
+        h = hashlib.md5(cleaned_content.encode("utf-8")).hexdigest()
         if h in seen_hashes:
             dup_count += 1
             continue
 
         seen_hashes.add(h)
-        r["content_vi"] = cleaned_vi
+        r[field] = cleaned_content
         r["chapter_title"] = cleaned_title
         r["_chap_num"] = parse_chapter_number(cleaned_title)
         unique_records.append(r)
@@ -447,7 +482,7 @@ def main():
         output_path.write_text(cleaned, encoding="utf-8")
         stats = {"total": 1, "unique": 1, "duplicates": 0}
 
-    print(f"[✓] Completed!")
+    print("[✓] Completed!")
     print(f"    Total chapters in input: {stats.get('total')}")
     print(f"    Unique chapters retained: {stats.get('unique')}")
     print(f"    Duplicate chapters removed: {stats.get('duplicates')}")

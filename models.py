@@ -4,7 +4,7 @@ Data models for SangTacViet Scraper.
 
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 
 def get_current_iso_time() -> str:
@@ -14,7 +14,14 @@ def get_current_iso_time() -> str:
 
 @dataclass
 class ChapterRecord:
-    """Clean chapter record formatted specifically for AI video narration & TTS."""
+    """
+    Clean chapter record formatted specifically for AI video narration & TTS.
+
+    ``content_vi`` holds Vietnamese text when the source provides it
+    (SangTacViet).  Chinese-only sources (Twkan) fill ``content_zh`` instead and
+    set ``language="zh"``; storage and the CLI fall back to whichever field is
+    populated.
+    """
     story_id: str
     story_title: str
     chapter_id: str
@@ -23,7 +30,14 @@ class ChapterRecord:
     content_vi: str
     content_zh: str = ""
     content_hanviet: str = ""
+    source: str = ""
+    language: str = "vi"
     crawled_at: str = field(default_factory=get_current_iso_time)
+
+    @property
+    def body(self) -> str:
+        """Best available text body (Vietnamese first, then Chinese)."""
+        return self.content_vi or self.content_zh
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

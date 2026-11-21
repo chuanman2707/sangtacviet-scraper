@@ -86,3 +86,65 @@ Tài liệu lưu trữ toàn bộ các phát hiện kỹ thuật, cơ chế ho�
 
 1. **`.md` (Markdown):** Được cấu trúc theo tiêu đề chuẩn `# Tên Truyện` và `## Thứ N chương ...`, tiện lợi cho việc đọc trực tiếp trên máy tính hoặc điện thoại.
 2. **`.jsonl` (JSON Lines):** Mỗi dòng là một bản ghi JSON độc lập gồm nội dung tiếng Việt (`content_vi`), tiếng Trung gốc (`content_zh`), âm Hán Việt (`content_hanviet`), tối ưu cho pipeline tự động sinh video YouTube / TikTok và đọc lồng tiếng bằng AI TTS.
+
+---
+
+## 7. Twkan (台灣小說網) — Cloudflare Managed Challenge & Cấu Trúc Trang
+
+### 7.1. Kiến trúc URL & dữ liệu
+
+* **Book page:** `https://twkan.com/book/{book_id}.html`
+* **Chapter index:** `https://twkan.com/book/{book_id}/index.html`
+* **Chapter list API:** `https://twkan.com/ajax_novels/chapterlist/{book_id}.html`
+  * Trả về fragment `<ul><li data-num="N"><a href="...">Tên chương</a></li>...</ul>`.
+  * `data-num` là **thứ tự** (1..N), không phải số chương trong tiêu đề (tiêu đề có thể nhảy số do truyện bị xóa chương).
+  * `href` là URL tuyệt đối dạng `https://twkan.com/txt/{book_id}/{chapter_id}`.
+* **Chapter page:** `https://twkan.com/txt/{book_id}/{chapter_id}`
+  * Nội dung nằm trong `div#txtcontent0` (text + `<br>`, không phải JSON/JS mã hóa).
+  * Tiêu đề chương: `div.txtnav h1`; metadata truyện: `window.bookinfo.articlename` / `author`.
+  * Link chương kế: `div.page1 a` có text `下一章` (không có `#pb_next`).
+* **Không có phân trang nội dung**: mỗi chương là 1 trang duy nhất.
+
+### 7.2. Cloudflare & phòng chống crawl
+
+* Site dùng **Cloudflare Managed Challenge** (`cType: 'managed'`). Khi bị nghi ngờ, server trả trang `Just a moment...` với HTTP 403; body không có nội dung truyện.
+* Challenge xuất hiện **ngẫu nhiên theo burst**, không phải mọi request. Trong test: ~1/15 request với delay 1.5s; giảm xuống gần như 0 khi delay 3.5–5.5s và nghỉ 15s mỗi 12 chương.
+* CloakBrowser (Chromium C++ patches) render được trang twkan ở **headless**; headed + `humanize=True` giúp giảm tần suất challenge.
+* Chiến lược trong code:
+  1. Phát hiện challenge qua title/DOM (`page_is_challenge`).
+  2. Chờ tối đa ~35s, thử click Turnstile checkbox, reload 1 lần.
+  3. Nếu vẫn chặn: chờ cooldown 20s, recycle `BrowserContext` (giữ cookie), thử lại tối đa 3 lần.
+  4. Thất bại thì bỏ qua chương (không đánh dấu checkpoint) để lần chạy sau tải lại.
+
+### 7.3. Watermark & làm sạch
+
+* Watermark được chèn ngẫu nhiên vào nội dung, làm rối bằng Unicode:
+  * `本書由𝕥𝕨𝕜𝕒𝕟.𝕔𝕠𝕞全網首發` (Mathematical Alphanumeric Symbols).
+  * `【記住本站域名 ... 🆃🆆🅺🅰🅽.🅲🅾🅼超實用 】` (Squared Alphanumerics).
+  * `GOOGLE搜索TWKAN`.
+* `textnorm.py` chuẩn hóa các ký tự obfuscated về ASCII trước khi so khớp, sau đó `sanitize_chapter_text()` loại bỏ cả dòng watermark và watermark inline.
+* Nội dung tiếng Trung được giữ nguyên đoạn văn; **không** chạy các rule sửa lỗi convert tiếng Việt và không merge dòng ngắn (sẽ làm hỏng văn phong Trung).
+
+### 7.4. Lưu trữ & ngôn ngữ
+
+* `ChapterRecord` có thêm `source` và `language`; Twkan ghi `content_zh`, `language="zh"`, `content_vi=""`.
+* `storage.py` dùng `record.body` (= `content_vi or content_zh`) cho file Markdown.
+* `cleaner.py` tự chọn `content_vi` nếu có, ngược lại làm sạch `content_zh`; `parse_chapter_number()` hiểu cả `第12章` và `Chương 12`.
+
+---
+
+## 8. CloakBrowser trên Linux (không dùng Chromium của Playwright)
+
+* Dự án chỉ dùng đúng một loại browser: **CloakBrowser stealth Chromium**. Nhánh fallback `sync_playwright().chromium.launch(...)` đã bị loại bỏ.
+* Playwright vẫn là dependency vì `cloakbrowser` dùng API Playwright để điều khiển binary, nhưng **không** dùng browser do `playwright install` tải về.
+* Binary hợp lệ nằm ở:
+  * Linux: `~/.cloakbrowser/chromium-<version>/chrome`
+  * macOS: `~/.cloakbrowser/chromium-<version>/Chromium.app/Contents/MacOS/Chromium`
+  * Windows: `~/.cloakbrowser/chromium-<version>/chrome.exe`
+* `config.find_cached_cloak_binary()` chỉ chấp nhận file thực thi đúng platform hiện tại, nên binary `.exe` copy từ Windows sẽ bị bỏ qua trên Linux.
+* Thứ tự ưu tiên khi resolve binary:
+  1. `CLOAKBROWSER_BINARY_PATH` (nếu file tồn tại).
+  2. Binary cache mới nhất trong `~/.cloakbrowser` (không cần license, không hỏi key).
+  3. `cloakbrowser.download.ensure_binary()` (bản latest có thể cần free/Pro key).
+* Cập nhật binary: `python main.py --update-cloak`. Nếu bị hỏi key, lấy free key qua link hoặc `cloakbrowser login`.
+* Giới hạn phiên bản: cloakbrowser `0.7.3` chạy tốt với Playwright `1.65.x`; cloakbrowser `0.6.x` sẽ lỗi import với Playwright `1.65` (module `playwright._impl._js_handle` đã đổi).

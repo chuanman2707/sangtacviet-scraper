@@ -6,6 +6,9 @@ output/
 *.tmp
 cookies.json
 cookies.txt
+cookies_twkan.json
+*.key
+.env
 *.png
 *.html
 .system_generated/

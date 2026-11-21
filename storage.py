@@ -26,7 +26,7 @@ class MarkdownStorage:
                 f.write("---\n\n")
 
             f.write(f"## {record.chapter_title}\n\n")
-            f.write(f"{record.content_vi}\n\n")
+            f.write(f"{record.body}\n\n")
             f.write("---\n\n")
             f.flush()
             os.fsync(f.fileno())

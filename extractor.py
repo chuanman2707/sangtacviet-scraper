@@ -3,8 +3,7 @@ In-page DOM extractor for SangTacViet chapters.
 Extracts aligned bilingual paragraphs (Vietnamese convert, Chinese original, Han-Viet).
 """
 
-from typing import Any, Dict, Optional, Tuple
-from playwright.sync_api import Page
+from typing import Any, Optional, Tuple
 from models import ChapterRecord
 
 
@@ -116,7 +115,7 @@ EXTRACTION_JS = """(extractBilingual) => {
 
 
 def extract_chapter_payload(
-    page: Page, story_id: str, chapter_id: str, current_url: str, extract_bilingual: bool = False
+    page: Any, story_id: str, chapter_id: str, current_url: str, extract_bilingual: bool = False
 ) -> Tuple[Optional[ChapterRecord], Optional[str]]:
     """
     Executes in-page extraction and returns (ChapterRecord, next_chapter_id).

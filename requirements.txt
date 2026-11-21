@@ -1,3 +1,5 @@
-cloakbrowser>=0.5.10
-playwright>=1.63.0
+cloakbrowser>=0.7.3
+# Playwright is only the control API used by cloakbrowser; the browser itself
+# is the CloakBrowser stealth Chromium binary (never Playwright's Chromium).
+playwright>=1.65.0
 rich>=13.0.0
